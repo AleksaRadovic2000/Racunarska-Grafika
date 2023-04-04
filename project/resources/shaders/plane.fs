@@ -13,7 +13,7 @@ uniform sampler2D diffuseMap;
 uniform sampler2D normalMap;
 uniform sampler2D depthMap;
 uniform sampler2D specMap;
-
+uniform float shininess;
 uniform float heightScale;
 
 vec2 ParallaxMapping(vec2 texCoords, vec3 viewDir)
@@ -45,9 +45,9 @@ void main()
     // specular
     vec3 reflectDir = reflect(-lightDir, normal);
     vec3 halfwayDir = normalize(lightDir + viewDir);
-    float spec = pow(max(dot(normal, halfwayDir), 0.0), 32.0);
+    float spec = pow(max(dot(normal, halfwayDir), 0.0), shininess);
 
     vec3 specular = (vec3(1.0)-texture(specMap, texCoords).rgb) * spec;
-
+//   vec3 specular = vec3(0.2)*spec;
     FragColor = vec4(ambient + diffuse + specular, 1.0);
 }

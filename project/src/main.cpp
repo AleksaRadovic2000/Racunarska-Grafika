@@ -107,7 +107,7 @@ int main() {
     // build and compile shaders
     // -------------------------
     Shader planeShader("resources/shaders/plane.vs", "resources/shaders/plane.fs");
-
+    Shader houseShader("resources/shaders/house.vs", "resources/shaders/house.fs");
 
 
     unsigned int diffuseMap = loadTexture(FileSystem::getPath("resources/textures/plane/Grass_005_BaseColor.jpg").c_str());
@@ -124,8 +124,11 @@ int main() {
     // load models
     // -----------
 
+    Model house("resources/objects/Big_Old_House/Big_Old_House.obj");
+    house.SetShaderTextureNamePrefix("material.");
 
-    pointLight.position = glm::vec3(4.0f, 4.0, 0.0);
+
+    pointLight.position = glm::vec3(10.0f, 10.0, 10.0);
     pointLight.ambient = glm::vec3(0.1, 0.1, 0.1);
     pointLight.diffuse = glm::vec3(0.6, 0.6, 0.6);
     pointLight.specular = glm::vec3(1.0, 1.0, 1.0);
@@ -162,12 +165,40 @@ int main() {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         // don't forget to enable shader before setting uniforms
+        
+        //house
+        houseShader.use();
+        houseShader.setVec3("lightPos", pointLight.position);
+        houseShader.setVec3("pointLight.ambient", pointLight.ambient);
+        houseShader.setVec3("pointLight.diffuse", pointLight.diffuse);
+        houseShader.setVec3("pointLight.specular", pointLight.specular);
+        houseShader.setFloat("pointLight.constant", pointLight.constant);
+        houseShader.setFloat("pointLight.linear", pointLight.linear);
+        houseShader.setFloat("pointLight.quadratic", pointLight.quadratic);
+        houseShader.setVec3("viewPos", camera.Position);
+        houseShader.setFloat("material.shininess", 32.0f);
+        // view/projection transformations
+        glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom),
+                                                (float) SCR_WIDTH / (float) SCR_HEIGHT, 0.1f, 100.0f);
+        glm::mat4 view = camera.GetViewMatrix();
+        houseShader.setMat4("projection", projection);
+        houseShader.setMat4("view", view);
+
+        // render the loaded model
+        glm::mat4 model = glm::mat4(1.0f);
+        model = glm::scale(model, glm::vec3(0.1f));    // it's a bit too big for our scene, so scale it down
+        houseShader.setMat4("model", model);
+        house.Draw(houseShader);
+        
+        
+        
+        //plane
 
         planeShader.use();
-        glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom),
+        projection = glm::perspective(glm::radians(camera.Zoom),
                                       (float) SCR_WIDTH / (float) SCR_HEIGHT, 0.1f, 100.0f);
-        glm::mat4 view = camera.GetViewMatrix();
-        glm::mat4 model = glm::mat4(1.0f);
+        view = camera.GetViewMatrix();
+        model = glm::mat4(1.0f);
         model = glm::rotate(model, glm::radians(-90.0f), glm::vec3(1.0, 0.0, 0.0));
 
         planeShader.setMat4("projection", projection);
@@ -175,7 +206,8 @@ int main() {
         planeShader.setMat4("model", model);
         planeShader.setVec3("viewPos", camera.Position);
         planeShader.setVec3("lightPos", pointLight.position);
-        planeShader.setFloat("heightScale", heightScale); // adjust with Q and E keys
+        planeShader.setFloat("heightScale", heightScale);
+        planeShader.setFloat("shininess", 64.0f);
 
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, diffuseMap);
