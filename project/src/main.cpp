@@ -15,6 +15,7 @@
 #include <learnopengl/model.h>
 
 #include <iostream>
+#include <cmath>
 
 void framebuffer_size_callback(GLFWwindow *window, int width, int height);
 
@@ -27,6 +28,8 @@ void processInput(GLFWwindow *window);
 unsigned int loadTexture(char const *path);
 
 void renderPlane(unsigned int planeVAO, unsigned int planeVBO);
+
+void renderPath(unsigned int pathVAO, unsigned int pathVBO);
 
 
 
@@ -108,7 +111,9 @@ int main() {
     // -------------------------
     Shader planeShader("resources/shaders/plane.vs", "resources/shaders/plane.fs");
     Shader houseShader("resources/shaders/house.vs", "resources/shaders/house.fs");
-
+    Shader treeShader("resources/shaders/tree.vs", "resources/shaders/tree.fs");
+    Shader decorationShader("resources/shaders/decoration.vs", "resources/shaders/decoration.fs");
+    Shader pathShader("resources/shaders/plane.vs", "resources/shaders/plane.fs");
 
     unsigned int diffuseMap = loadTexture(FileSystem::getPath("resources/textures/plane/Grass_005_BaseColor.jpg").c_str());
     unsigned int normalMap  = loadTexture(FileSystem::getPath("resources/textures/plane/Grass_005_Normal.jpg").c_str());
@@ -121,11 +126,35 @@ int main() {
     planeShader.setInt("depthMap", 2);
     planeShader.setInt("specMap", 3);
 
+
+    unsigned int diffuseMap1 = loadTexture(FileSystem::getPath("resources/textures/stone floor/Stylized_Stone_Floor_005_basecolor.jpg").c_str());
+    unsigned int normalMap1  = loadTexture(FileSystem::getPath("resources/textures/stone floor/Stylized_Stone_Floor_005_normal.jpg").c_str());
+    unsigned int heightMap1  = loadTexture(FileSystem::getPath("resources/textures/stone floor/Stylized_Stone_Floor_005_height.png").c_str());
+    unsigned int specMap1  = loadTexture(FileSystem::getPath("resources/textures/stone floor/Stylized_Stone_Floor_005_roughness.jpg").c_str());
+
+    pathShader.use();
+    pathShader.setInt("diffuseMap", 4);
+    pathShader.setInt("normalMap", 5);
+    pathShader.setInt("depthMap", 6);
+    pathShader.setInt("specMap", 7);
     // load models
     // -----------
 
     Model house("resources/objects/Big_Old_House/Big_Old_House.obj");
     house.SetShaderTextureNamePrefix("material.");
+
+    Model tree_1("resources/objects/Tree 02/Tree.obj");
+    tree_1.SetShaderTextureNamePrefix("material.");
+
+    Model phormium1("resources/objects/Phormium_OBJ/Phormium_1.obj");
+    phormium1.SetShaderTextureNamePrefix("material.");
+
+    Model phormium2("resources/objects/Phormium_OBJ/Phormium_3.obj");
+    phormium2.SetShaderTextureNamePrefix("material.");
+
+
+    Model lightPole("resources/objects/Light Pole/Light Pole.obj");
+    lightPole.SetShaderTextureNamePrefix("material.");
 
 
     pointLight.position = glm::vec3(10.0f, 10.0, 10.0);
@@ -133,15 +162,54 @@ int main() {
     pointLight.diffuse = glm::vec3(0.6, 0.6, 0.6);
     pointLight.specular = glm::vec3(1.0, 1.0, 1.0);
 
-    pointLight.constant = 1.0f;
+    pointLight.constant = 0.5f;
     pointLight.linear = 0.09f;
     pointLight.quadratic = 0.032f;
 
     camera.Position = glm::vec3(1.0, 1.0, 1.0);
     float heightScale = 0.01;
 
+    vector<glm::vec3> tree1_positions;
+    vector<glm::vec3> tree2_positions;
+
+
+    float poz = -4.5;
+    float p = 0.7;
+
+    for(float i = 0; poz + i < 4.5; i+=p){
+        for(float j = 0; poz + j < 4.5; j+=p){
+
+            if (abs(poz + i) < 0.8) {
+                if (poz + j < -0.8) {
+                        tree1_positions.push_back(glm::vec3(poz + i, 0, poz + j));
+                    }
+            } else {
+                if ( abs(poz + i) > 0.8 || abs(poz + j) > 0.8) {
+                    tree1_positions.push_back(glm::vec3(poz + i, 0, poz + j));
+                }
+            }
+
+        }
+    }
+
+    vector<glm::vec3> phormium1_pos;
+
+    vector<glm::vec3> phormium2_pos;
+    float ph_pos = 0.3;
+    for(float i = 0; ph_pos + i < 4.5; i+=0.2){
+        phormium1_pos.push_back(glm::vec3(0.2, 0.0, ph_pos+i));
+        phormium2_pos.push_back(glm::vec3(-0.2, 0.0, ph_pos+i));
+    }
+
+
+
+
     unsigned int planeVAO = 0;
     unsigned int planeVBO = 0;
+
+    unsigned int pathVAO = 0;
+    unsigned int pathVBO = 0;
+
 
 
 
@@ -176,7 +244,7 @@ int main() {
         houseShader.setFloat("pointLight.linear", pointLight.linear);
         houseShader.setFloat("pointLight.quadratic", pointLight.quadratic);
         houseShader.setVec3("viewPos", camera.Position);
-        houseShader.setFloat("material.shininess", 32.0f);
+        houseShader.setFloat("material.shininess", 8.0f);
         // view/projection transformations
         glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom),
                                                 (float) SCR_WIDTH / (float) SCR_HEIGHT, 0.1f, 100.0f);
@@ -189,8 +257,136 @@ int main() {
         model = glm::scale(model, glm::vec3(0.1f));    // it's a bit too big for our scene, so scale it down
         houseShader.setMat4("model", model);
         house.Draw(houseShader);
-        
-        
+
+        //phormium1
+        for(int i = 0; i < phormium1_pos.size(); i++) {
+            decorationShader.use();
+            decorationShader.setVec3("lightPos", pointLight.position);
+            decorationShader.setVec3("pointLight.ambient", pointLight.ambient);
+            decorationShader.setVec3("pointLight.diffuse", pointLight.diffuse);
+            decorationShader.setVec3("pointLight.specular", pointLight.specular);
+            decorationShader.setFloat("pointLight.constant", pointLight.constant);
+            decorationShader.setFloat("pointLight.linear", pointLight.linear);
+            decorationShader.setFloat("pointLight.quadratic", pointLight.quadratic);
+            decorationShader.setVec3("viewPos", camera.Position);
+            decorationShader.setFloat("material.shininess", 32.0f);
+            // view/projection transformations
+            projection = glm::perspective(glm::radians(camera.Zoom),
+                                          (float) SCR_WIDTH / (float) SCR_HEIGHT, 0.1f, 100.0f);
+            view = camera.GetViewMatrix();
+            decorationShader.setMat4("projection", projection);
+            decorationShader.setMat4("view", view);
+
+            // render the loaded model
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, phormium1_pos[i]);
+            model = glm::scale(model, glm::vec3(0.01f));    // it's a bit too big for our scene, so scale it down
+            decorationShader.setMat4("model", model);
+            phormium1.Draw(decorationShader);
+        }
+
+        //phormium2
+        for(int i = 0; i < phormium2_pos.size(); i++) {
+            decorationShader.use();
+            decorationShader.setVec3("lightPos", pointLight.position);
+            decorationShader.setVec3("pointLight.ambient", pointLight.ambient);
+            decorationShader.setVec3("pointLight.diffuse", pointLight.diffuse);
+            decorationShader.setVec3("pointLight.specular", pointLight.specular);
+            decorationShader.setFloat("pointLight.constant", pointLight.constant);
+            decorationShader.setFloat("pointLight.linear", pointLight.linear);
+            decorationShader.setFloat("pointLight.quadratic", pointLight.quadratic);
+            decorationShader.setVec3("viewPos", camera.Position);
+            decorationShader.setFloat("material.shininess", 32.0f);
+            // view/projection transformations
+            projection = glm::perspective(glm::radians(camera.Zoom),
+                                          (float) SCR_WIDTH / (float) SCR_HEIGHT, 0.1f, 100.0f);
+            view = camera.GetViewMatrix();
+            decorationShader.setMat4("projection", projection);
+            decorationShader.setMat4("view", view);
+
+            // render the loaded model
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, phormium2_pos[i]);
+            model = glm::scale(model, glm::vec3(0.01f));    // it's a bit too big for our scene, so scale it down
+            decorationShader.setMat4("model", model);
+            phormium2.Draw(decorationShader);
+        }
+        //tree2
+
+        for(int i = 0; i < tree1_positions.size(); i++) {
+            treeShader.use();
+            treeShader.setVec3("pointLight.position", pointLight.position);
+            treeShader.setVec3("pointLight.ambient", pointLight.ambient);
+            treeShader.setVec3("pointLight.diffuse", pointLight.diffuse);
+            treeShader.setVec3("pointLight.specular", pointLight.specular);
+            treeShader.setFloat("pointLight.constant", pointLight.constant);
+            treeShader.setFloat("pointLight.linear", pointLight.linear);
+            treeShader.setFloat("pointLight.quadratic", pointLight.quadratic);
+            treeShader.setVec3("viewPosition", camera.Position);
+            treeShader.setFloat("material.shininess", 32.0f);
+            // view/projection transformations
+            projection = glm::perspective(glm::radians(camera.Zoom),
+                                          (float) SCR_WIDTH / (float) SCR_HEIGHT, 0.1f, 100.0f);
+            view = camera.GetViewMatrix();
+            treeShader.setMat4("projection", projection);
+            treeShader.setMat4("view", view);
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, tree1_positions[i]);
+            model = glm::scale(model, glm::vec3(0.1f));    // it's a bit too big for our scene, so scale it down
+            treeShader.setMat4("model", model);
+            tree_1.Draw(treeShader);
+        }
+
+        decorationShader.use();
+        decorationShader.setVec3("lightPos", pointLight.position);
+        decorationShader.setVec3("pointLight.ambient", pointLight.ambient);
+        decorationShader.setVec3("pointLight.diffuse", pointLight.diffuse);
+        decorationShader.setVec3("pointLight.specular", pointLight.specular);
+        decorationShader.setFloat("pointLight.constant", pointLight.constant);
+        decorationShader.setFloat("pointLight.linear", pointLight.linear);
+        decorationShader.setFloat("pointLight.quadratic", pointLight.quadratic);
+        decorationShader.setVec3("viewPos", camera.Position);
+        decorationShader.setFloat("material.shininess", 32.0f);
+        // view/projection transformations
+        projection = glm::perspective(glm::radians(camera.Zoom),
+                                      (float) SCR_WIDTH / (float) SCR_HEIGHT, 0.1f, 100.0f);
+        view = camera.GetViewMatrix();
+        decorationShader.setMat4("projection", projection);
+        decorationShader.setMat4("view", view);
+
+        // render the loaded model
+        model = glm::mat4(1.0f);
+        model = glm::translate(model, glm::vec3(0.3, 0.2, 0.5));
+        model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0.0, 1.0, 0.0));
+        model = glm::scale(model, glm::vec3(0.02f));    // it's a bit too big for our scene, so scale it down
+        decorationShader.setMat4("model", model);
+        lightPole.Draw(decorationShader);
+
+        decorationShader.use();
+        decorationShader.setVec3("lightPos", pointLight.position);
+        decorationShader.setVec3("pointLight.ambient", pointLight.ambient);
+        decorationShader.setVec3("pointLight.diffuse", pointLight.diffuse);
+        decorationShader.setVec3("pointLight.specular", pointLight.specular);
+        decorationShader.setFloat("pointLight.constant", pointLight.constant);
+        decorationShader.setFloat("pointLight.linear", pointLight.linear);
+        decorationShader.setFloat("pointLight.quadratic", pointLight.quadratic);
+        decorationShader.setVec3("viewPos", camera.Position);
+        decorationShader.setFloat("material.shininess", 32.0f);
+        // view/projection transformations
+        projection = glm::perspective(glm::radians(camera.Zoom),
+                                      (float) SCR_WIDTH / (float) SCR_HEIGHT, 0.1f, 100.0f);
+        view = camera.GetViewMatrix();
+        decorationShader.setMat4("projection", projection);
+        decorationShader.setMat4("view", view);
+
+        // render the loaded model
+        model = glm::mat4(1.0f);
+        model = glm::translate(model, glm::vec3(-0.3, 0.2, 0.5));
+        model = glm::rotate(model, glm::radians(-90.0f), glm::vec3(0.0, 1.0, 0.0));
+        model = glm::scale(model, glm::vec3(0.02f));    // it's a bit too big for our scene, so scale it down
+        decorationShader.setMat4("model", model);
+        lightPole.Draw(decorationShader);
+
         
         //plane
 
@@ -219,6 +415,35 @@ int main() {
         glBindTexture(GL_TEXTURE_2D, specMap);
 
         renderPlane(planeVAO, planeVBO);
+
+        //path
+        pathShader.use();
+        projection = glm::perspective(glm::radians(camera.Zoom),
+                                      (float) SCR_WIDTH / (float) SCR_HEIGHT, 0.1f, 100.0f);
+        view = camera.GetViewMatrix();
+        model = glm::mat4(1.0f);
+        model = glm::rotate(model, glm::radians(-90.0f), glm::vec3(1.0, 0.0, 0.0));
+
+        pathShader.setMat4("projection", projection);
+        pathShader.setMat4("view", view);
+        pathShader.setMat4("model", model);
+        pathShader.setVec3("viewPos", camera.Position);
+        pathShader.setVec3("lightPos", pointLight.position);
+        pathShader.setFloat("heightScale", heightScale);
+        pathShader.setFloat("shininess", 256.0f);
+
+        glActiveTexture(GL_TEXTURE4);
+        glBindTexture(GL_TEXTURE_2D, diffuseMap1);
+        glActiveTexture(GL_TEXTURE5);
+        glBindTexture(GL_TEXTURE_2D, normalMap1);
+        glActiveTexture(GL_TEXTURE6);
+        glBindTexture(GL_TEXTURE_2D, heightMap1);
+        glActiveTexture(GL_TEXTURE7);
+        glBindTexture(GL_TEXTURE_2D, specMap1);
+
+        renderPath(pathVAO, pathVBO);
+
+
 
 
         // glfw: swap buffers and poll IO events (keys pressed/released, mouse moved etc.)
@@ -293,10 +518,10 @@ void renderPlane(unsigned int planeVAO, unsigned int planeVBO)
         glm::vec3 pos4( 5.0f,  5.0f, 0.0f);
 
         //        texture coordinates
-        glm::vec2 uv1(0.0f, 15.0f);
+        glm::vec2 uv1(0.0f, 50.0f);
         glm::vec2 uv2(0.0f, 0.0f);
-        glm::vec2 uv3(15.0f, 0.0f);
-        glm::vec2 uv4(15.0f, 15.0f);
+        glm::vec2 uv3(50.0f, 0.0f);
+        glm::vec2 uv4(50.0f, 50.0f);
         // normal vector
         glm::vec3 nm(0.0f, 0.0f, 1.0f);
 
@@ -374,7 +599,98 @@ void renderPlane(unsigned int planeVAO, unsigned int planeVBO)
     glDrawArrays(GL_TRIANGLES, 0, 6);
     glBindVertexArray(0);
 }
+void renderPath(unsigned int planeVAO, unsigned int planeVBO)
+{
+    if (planeVAO == 0)
+    {
 
+        glm::vec3 pos1(-0.1f,  0.1f, 0.001f);
+        glm::vec3 pos2(-0.1f, -5.0f, 0.001f);
+        glm::vec3 pos3( 0.1f, -5.0f, 0.001f);
+        glm::vec3 pos4( 0.1f,  0.1f, 0.001f);
+
+        //        texture coordinates
+        glm::vec2 uv1(0.0f, 40.0f);
+        glm::vec2 uv2(0.0f, 0.0f);
+        glm::vec2 uv3(2.0f, 0.0f);
+        glm::vec2 uv4(2.0f, 40.0f);
+        // normal vector
+        glm::vec3 nm(0.0f, 0.0f, 1.0f);
+
+        // calculate tangent/bitangent vectors of both triangles
+        glm::vec3 tangent1, bitangent1;
+        glm::vec3 tangent2, bitangent2;
+        // triangle 1
+        // ----------
+        glm::vec3 edge1 = pos2 - pos1;
+        glm::vec3 edge2 = pos3 - pos1;
+        glm::vec2 deltaUV1 = uv2 - uv1;
+        glm::vec2 deltaUV2 = uv3 - uv1;
+
+        float f = 10.0f / (deltaUV1.x * deltaUV2.y - deltaUV2.x * deltaUV1.y);
+
+        tangent1.x = f * (deltaUV2.y * edge1.x - deltaUV1.y * edge2.x);
+        tangent1.y = f * (deltaUV2.y * edge1.y - deltaUV1.y * edge2.y);
+        tangent1.z = f * (deltaUV2.y * edge1.z - deltaUV1.y * edge2.z);
+        tangent1 = glm::normalize(tangent1);
+
+        bitangent1.x = f * (-deltaUV2.x * edge1.x + deltaUV1.x * edge2.x);
+        bitangent1.y = f * (-deltaUV2.x * edge1.y + deltaUV1.x * edge2.y);
+        bitangent1.z = f * (-deltaUV2.x * edge1.z + deltaUV1.x * edge2.z);
+        bitangent1 = glm::normalize(bitangent1);
+
+        // triangle 2
+        // ----------
+        edge1 = pos3 - pos1;
+        edge2 = pos4 - pos1;
+        deltaUV1 = uv3 - uv1;
+        deltaUV2 = uv4 - uv1;
+
+        f = 10.0f / (deltaUV1.x * deltaUV2.y - deltaUV2.x * deltaUV1.y);
+
+        tangent2.x = f * (deltaUV2.y * edge1.x - deltaUV1.y * edge2.x);
+        tangent2.y = f * (deltaUV2.y * edge1.y - deltaUV1.y * edge2.y);
+        tangent2.z = f * (deltaUV2.y * edge1.z - deltaUV1.y * edge2.z);
+        tangent2 = glm::normalize(tangent2);
+
+
+        bitangent2.x = f * (-deltaUV2.x * edge1.x + deltaUV1.x * edge2.x);
+        bitangent2.y = f * (-deltaUV2.x * edge1.y + deltaUV1.x * edge2.y);
+        bitangent2.z = f * (-deltaUV2.x * edge1.z + deltaUV1.x * edge2.z);
+        bitangent2 = glm::normalize(bitangent2);
+
+
+        float quadVertices[] = {
+                // positions            // normal         // texcoords  // tangent                          // bitangent
+                pos1.x, pos1.y, pos1.z, nm.x, nm.y, nm.z, uv1.x, uv1.y, tangent1.x, tangent1.y, tangent1.z, bitangent1.x, bitangent1.y, bitangent1.z,
+                pos2.x, pos2.y, pos2.z, nm.x, nm.y, nm.z, uv2.x, uv2.y, tangent1.x, tangent1.y, tangent1.z, bitangent1.x, bitangent1.y, bitangent1.z,
+                pos3.x, pos3.y, pos3.z, nm.x, nm.y, nm.z, uv3.x, uv3.y, tangent1.x, tangent1.y, tangent1.z, bitangent1.x, bitangent1.y, bitangent1.z,
+
+                pos1.x, pos1.y, pos1.z, nm.x, nm.y, nm.z, uv1.x, uv1.y, tangent2.x, tangent2.y, tangent2.z, bitangent2.x, bitangent2.y, bitangent2.z,
+                pos3.x, pos3.y, pos3.z, nm.x, nm.y, nm.z, uv3.x, uv3.y, tangent2.x, tangent2.y, tangent2.z, bitangent2.x, bitangent2.y, bitangent2.z,
+                pos4.x, pos4.y, pos4.z, nm.x, nm.y, nm.z, uv4.x, uv4.y, tangent2.x, tangent2.y, tangent2.z, bitangent2.x, bitangent2.y, bitangent2.z
+        };
+        // configure plane VAO
+        glGenVertexArrays(1, &planeVAO);
+        glGenBuffers(1, &planeVBO);
+        glBindVertexArray(planeVAO);
+        glBindBuffer(GL_ARRAY_BUFFER, planeVBO);
+        glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), &quadVertices, GL_STATIC_DRAW);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 14 * sizeof(float), (void*)0);
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 14 * sizeof(float), (void*)(3 * sizeof(float)));
+        glEnableVertexAttribArray(2);
+        glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 14 * sizeof(float), (void*)(6 * sizeof(float)));
+        glEnableVertexAttribArray(3);
+        glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, 14 * sizeof(float), (void*)(8 * sizeof(float)));
+        glEnableVertexAttribArray(4);
+        glVertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE, 14 * sizeof(float), (void*)(11 * sizeof(float)));
+    }
+    glBindVertexArray(planeVAO);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glBindVertexArray(0);
+}
 unsigned int loadTexture(char const *path)
 {
     unsigned int textureID;
