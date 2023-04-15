@@ -35,6 +35,8 @@ unsigned int loadCubemap(vector<std::string> faces);
 
 void key_callback(GLFWwindow *window, int key, int scancode, int action, int mods);
 
+void DrawImGui();
+
 // settings
 const unsigned int SCR_WIDTH = 800;
 const unsigned int SCR_HEIGHT = 600;
@@ -49,7 +51,6 @@ bool firstMouse = true;
 float deltaTime = 0.0f;
 float lastFrame = 0.0f;
 
-bool dan = true;
 
 struct PointLight {
     glm::vec3 position;
@@ -61,7 +62,7 @@ struct PointLight {
     float constant;
     float linear;
     float quadratic;
-}pointLight;
+};
 
 struct DirectionalLight{
     glm:: vec3 direction;
@@ -69,13 +70,21 @@ struct DirectionalLight{
     glm::vec3 ambient;
     glm::vec3 diffuse;
     glm::vec3 specular;
-}DirLight;
+};
 
-Camera camera = Camera();
+struct ProgramState {
+    glm::vec3 clearColor = glm::vec3(0);
+    Camera camera = Camera();
+    bool CameraMouseMovementUpdateEnabled = true;
+    PointLight pointLight;
+    DirectionalLight dirLight;
+    bool day = true;
+    bool ImGuiEnabled = false;
+};
+
+ProgramState *programState;
 
 int main() {
-    // glfw: initialize and configure
-    // ------------------------------
     glfwInit();
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
@@ -85,8 +94,6 @@ int main() {
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
 #endif
 
-    // glfw window creation
-    // --------------------
     GLFWwindow *window = glfwCreateWindow(SCR_WIDTH, SCR_HEIGHT, "LearnOpenGL", NULL, NULL);
     if (window == NULL) {
         std::cout << "Failed to create GLFW window" << std::endl;
@@ -97,28 +104,120 @@ int main() {
     glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
     glfwSetCursorPosCallback(window, mouse_callback);
     glfwSetScrollCallback(window, scroll_callback);
-//    glfwSetKeyCallback(window, key_callback);
+    glfwSetKeyCallback(window, key_callback);
     // tell GLFW to capture our mouse
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
-    // glad: load all OpenGL function pointers
-    // ---------------------------------------
+
     if (!gladLoadGLLoader((GLADloadproc) glfwGetProcAddress)) {
         std::cout << "Failed to initialize GLAD" << std::endl;
         return -1;
     }
-
-    // tell stb_image.h to flip loaded texture's on the y-axis (before loading model).
+    
     stbi_set_flip_vertically_on_load(false);
 
+    programState = new ProgramState;
+    if (programState->ImGuiEnabled) {
+        glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+    }
+    // Init Imgui
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO &io = ImGui::GetIO();
+    (void) io;
+
+
+
+    ImGui_ImplGlfw_InitForOpenGL(window, true);
+    ImGui_ImplOpenGL3_Init("#version 330 core");
 
 
 
     // configure global opengl state
     // -----------------------------
     glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LESS);
+
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_BACK);
+
 
     // build and compile shaders
+    // -------------------------
+    Shader skyboxShader("resources/shaders/skybox.vs", "resources/shaders/skybox.fs");
+    Shader planeShader("resources/shaders/plane.vs", "resources/shaders/plane.fs");
+    Shader houseShader("resources/shaders/house.vs", "resources/shaders/house.fs");
+    Shader decorationShader("resources/shaders/decoration.vs", "resources/shaders/decoration.fs");
+    Shader pathShader("resources/shaders/plane.vs", "resources/shaders/plane.fs");
+
+    unsigned int diffuseMap = loadTexture(FileSystem::getPath("resources/textures/plane/Grass_005_BaseColor.jpg").c_str());
+    unsigned int normalMap  = loadTexture(FileSystem::getPath("resources/textures/plane/Grass_005_Normal.jpg").c_str());
+    unsigned int heightMap  = loadTexture(FileSystem::getPath("resources/textures/plane/Grass_005_Height.png").c_str());
+    unsigned int specMap  = loadTexture(FileSystem::getPath("resources/textures/plane/Grass_005_AmbientOcclusion.jpg").c_str());
+
+    planeShader.use();
+    planeShader.setInt("diffuseMap", 0);
+    planeShader.setInt("normalMap", 1);
+    planeShader.setInt("depthMap", 2);
+    planeShader.setInt("specMap", 3);
+
+
+    unsigned int diffuseMap1 = loadTexture(FileSystem::getPath("resources/textures/stone floor/Stylized_Stone_Floor_005_basecolor.jpg").c_str());
+    unsigned int normalMap1  = loadTexture(FileSystem::getPath("resources/textures/stone floor/Stylized_Stone_Floor_005_normal.jpg").c_str());
+    unsigned int heightMap1  = loadTexture(FileSystem::getPath("resources/textures/stone floor/Stylized_Stone_Floor_005_height.png").c_str());
+    unsigned int specMap1  = loadTexture(FileSystem::getPath("resources/textures/stone floor/Stylized_Stone_Floor_005_ambientOcclusion.jpg").c_str());
+
+    pathShader.use();
+    pathShader.setInt("diffuseMap", 4);
+    pathShader.setInt("normalMap", 5);
+    pathShader.setInt("depthMap", 6);
+    pathShader.setInt("specMap", 7);
+
+    vector<std::string> faces
+            {
+                    FileSystem::getPath("resources/textures/skybox/sh_ft.png"),
+                    FileSystem::getPath("resources/textures/skybox/sh_bk.png"),
+                    FileSystem::getPath("resources/textures/skybox/sh_up.png"),
+                    FileSystem::getPath("resources/textures/skybox/sh_dn.png"),
+                    FileSystem::getPath("resources/textures/skybox/sh_rt.png"),
+                    FileSystem::getPath("resources/textures/skybox/sh_lf.png")
+            };
+
+    vector<std::string> faces1
+            {
+                    FileSystem::getPath("resources/textures/kurt/space_ft.png"),
+                    FileSystem::getPath("resources/textures/kurt/space_bk.png"),
+                    FileSystem::getPath("resources/textures/kurt/space_up.png"),
+                    FileSystem::getPath("resources/textures/kurt/space_dn.png"),
+                    FileSystem::getPath("resources/textures/kurt/space_rt.png"),
+                    FileSystem::getPath("resources/textures/kurt/space_lf.png")
+            };
+
+
+
+    unsigned int cubemapTexture = loadCubemap(faces);
+    unsigned int cubemapTexture1 = loadCubemap(faces1);
+
+    skyboxShader.use();
+    skyboxShader.setInt("skybox", 0);
+
+    // load models
+
+    Model house("resources/objects/Big_Old_House/Big_Old_House.obj");
+    house.SetShaderTextureNamePrefix("material.");
+
+    Model tree_1("resources/objects/Tree 02/Tree.obj");
+    tree_1.SetShaderTextureNamePrefix("material.");
+
+    Model phormium1("resources/objects/Phormium_OBJ/Phormium_1.obj");
+    phormium1.SetShaderTextureNamePrefix("material.");
+
+    Model phormium2("resources/objects/Phormium_OBJ/Phormium_3.obj");
+    phormium2.SetShaderTextureNamePrefix("material.");
+
+
+    Model lightPole("resources/objects/Light Pole/Light Pole.obj");
+    lightPole.SetShaderTextureNamePrefix("material.");
 
     float skyboxVertices[] = {
             // positions
@@ -175,113 +274,28 @@ int main() {
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
 
 
-    // build and compile shaders
-    // -------------------------
-    Shader skyboxShader("resources/shaders/skybox.vs", "resources/shaders/skybox.fs");
+    programState->dirLight.direction = glm::vec3(-1.0, -1.0, -1.0);
 
-    // -------------------------
-    Shader planeShader("resources/shaders/plane1.vs", "resources/shaders/plane1.fs");
-    Shader houseShader("resources/shaders/house1.vs", "resources/shaders/house1.fs");
-    Shader treeShader("resources/shaders/ml.vs", "resources/shaders/ml.fs");
-    Shader decorationShader("resources/shaders/ml.vs", "resources/shaders/ml.fs");
-    Shader pathShader("resources/shaders/plane1.vs", "resources/shaders/plane1.fs");
-
-    unsigned int diffuseMap = loadTexture(FileSystem::getPath("resources/textures/plane/Grass_005_BaseColor.jpg").c_str());
-    unsigned int normalMap  = loadTexture(FileSystem::getPath("resources/textures/plane/Grass_005_Normal.jpg").c_str());
-    unsigned int heightMap  = loadTexture(FileSystem::getPath("resources/textures/plane/Grass_005_Height.png").c_str());
-    unsigned int specMap  = loadTexture(FileSystem::getPath("resources/textures/plane/Grass_005_AmbientOcclusion.jpg").c_str());
-
-    planeShader.use();
-    planeShader.setInt("diffuseMap", 0);
-    planeShader.setInt("normalMap", 1);
-    planeShader.setInt("depthMap", 2);
-    planeShader.setInt("specMap", 3);
-
-
-    unsigned int diffuseMap1 = loadTexture(FileSystem::getPath("resources/textures/stone floor/Stylized_Stone_Floor_005_basecolor.jpg").c_str());
-    unsigned int normalMap1  = loadTexture(FileSystem::getPath("resources/textures/stone floor/Stylized_Stone_Floor_005_normal.jpg").c_str());
-    unsigned int heightMap1  = loadTexture(FileSystem::getPath("resources/textures/stone floor/Stylized_Stone_Floor_005_height.png").c_str());
-    unsigned int specMap1  = loadTexture(FileSystem::getPath("resources/textures/stone floor/Stylized_Stone_Floor_005_ambientOcclusion.jpg").c_str());
-
-    pathShader.use();
-    pathShader.setInt("diffuseMap", 4);
-    pathShader.setInt("normalMap", 5);
-    pathShader.setInt("depthMap", 6);
-    pathShader.setInt("specMap", 7);
-
-    vector<std::string> faces
-            {
-                    FileSystem::getPath("resources/textures/skybox/sh_ft.png"),
-                    FileSystem::getPath("resources/textures/skybox/sh_bk.png"),
-                    FileSystem::getPath("resources/textures/skybox/sh_up.png"),
-                    FileSystem::getPath("resources/textures/skybox/sh_dn.png"),
-                    FileSystem::getPath("resources/textures/skybox/sh_rt.png"),
-                    FileSystem::getPath("resources/textures/skybox/sh_lf.png")
-            };
-
-    vector<std::string> faces1
-            {
-                    FileSystem::getPath("resources/textures/kurt/space_ft.png"),
-                    FileSystem::getPath("resources/textures/kurt/space_bk.png"),
-                    FileSystem::getPath("resources/textures/kurt/space_up.png"),
-                    FileSystem::getPath("resources/textures/kurt/space_dn.png"),
-                    FileSystem::getPath("resources/textures/kurt/space_rt.png"),
-                    FileSystem::getPath("resources/textures/kurt/space_lf.png")
-            };
-
-
-
-    unsigned int cubemapTexture = loadCubemap(faces);
-    unsigned int cubemapTexture1 = loadCubemap(faces1);
-
-    skyboxShader.use();
-    skyboxShader.setInt("skybox", 0);
-
-    // load models
-    // -----------
-
-    Model house("resources/objects/Big_Old_House/Big_Old_House.obj");
-    house.SetShaderTextureNamePrefix("material.");
-
-    Model tree_1("resources/objects/Tree 02/Tree.obj");
-    tree_1.SetShaderTextureNamePrefix("material.");
-
-    Model phormium1("resources/objects/Phormium_OBJ/Phormium_1.obj");
-    phormium1.SetShaderTextureNamePrefix("material.");
-
-    Model phormium2("resources/objects/Phormium_OBJ/Phormium_3.obj");
-    phormium2.SetShaderTextureNamePrefix("material.");
-
-
-    Model lightPole("resources/objects/Light Pole/Light Pole.obj");
-    lightPole.SetShaderTextureNamePrefix("material.");
-
-
-
-
-    DirLight.direction = glm::vec3(-1.0, -1.0, -1.0);
-
-    DirLight.ambient = glm::vec3(0.05f, 0.05f, 0.05f);
-    DirLight.diffuse = glm::vec3(1.0f, 1.0f, 1.0f);
-    DirLight.specular = glm::vec3(0.3f, 0.3f, 0.3f);
+    programState->dirLight.ambient = glm::vec3(0.05f, 0.05f, 0.05f);
+    programState->dirLight.diffuse = glm::vec3(1.0f, 1.0f, 1.0f);
+    programState->dirLight.specular = glm::vec3(0.3f, 0.3f, 0.3f);
 
 
     glm::vec3 pointLightPositions[] = { glm::vec3(-0.15, 0.19, 0.5),
                                       glm::vec3(0.15, 0.19, 0.5)};
 
-    pointLight.ambient = glm::vec3(0.1, 0.1, 0.1);
-    pointLight.diffuse = glm::vec3(0.5, 0.5, 0.5);
-    pointLight.specular = glm::vec3(0.2, 0.2, 0.2);
+    programState->pointLight.ambient = glm::vec3(0.1, 0.1, 0.1);
+    programState->pointLight.diffuse = glm::vec3(0.5, 0.5, 0.5);
+    programState->pointLight.specular = glm::vec3(0.2, 0.2, 0.2);
 
-    pointLight.constant = 1.0f;
-    pointLight.linear = 0.08f;
-    pointLight.quadratic = 0.032f;
+    programState->pointLight.constant = 1.0f;
+    programState->pointLight.linear = 0.08f;
+    programState->pointLight.quadratic = 0.032f;
 
-    camera.Position = glm::vec3(1.0, 1.0, 1.0);
+    programState->camera.Position = glm::vec3(1.0, 1.0, 1.0);
     float heightScale = 0.01;
     vector<glm::vec3> tree1_positions;
     vector<glm::vec3> tree2_positions;
-
 
     float poz = -4.5;
     float p = 0.7;
@@ -311,20 +325,12 @@ int main() {
         phormium2_pos.push_back(glm::vec3(-0.2, 0.0, ph_pos+i));
     }
 
-
-
-
     unsigned int planeVAO = 0;
     unsigned int planeVBO = 0;
 
     unsigned int pathVAO = 0;
     unsigned int pathVBO = 0;
 
-
-
-
-    // render loop
-    // -----------
     while (!glfwWindowShouldClose(window)) {
         // per-frame time logic
         // --------------------
@@ -332,114 +338,80 @@ int main() {
         deltaTime = currentFrame - lastFrame;
         lastFrame = currentFrame;
 
-        // input
-        // -----
         processInput(window);
 
-
-        // render
-        // ------
         glClearColor(0.3,0.3,0.3, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        // don't forget to enable shader before setting uniforms
-        
+
         //house
         houseShader.use();
-//        houseShader.setVec3("lightPos", pointLightPositions[1]);
-//        houseShader.setVec3("pointLight.ambient", pointLight.ambient);
-//        houseShader.setVec3("pointLight.diffuse", pointLight.diffuse);
-//        houseShader.setVec3("pointLight.specular", pointLight.specular);
-//        houseShader.setFloat("pointLight.constant", pointLight.constant);
-//        houseShader.setFloat("pointLight.linear", pointLight.linear);
-//        houseShader.setFloat("pointLight.quadratic", pointLight.quadratic);
-
-        houseShader.setBool("dan", dan);
-        houseShader.setVec3("dirLight.direction", DirLight.direction);
-        houseShader.setVec3("dirLight.ambient", DirLight.ambient);
-        houseShader.setVec3("dirLight.diffuse", DirLight.diffuse);
-        houseShader.setVec3("dirLight.specular", DirLight.specular);
+        houseShader.setBool("dan", programState->day);
+        houseShader.setVec3("dirLight.direction", programState->dirLight.direction);
+        houseShader.setVec3("dirLight.ambient", programState->dirLight.ambient);
+        houseShader.setVec3("dirLight.diffuse", programState->dirLight.diffuse);
+        houseShader.setVec3("dirLight.specular", programState->dirLight.specular);
         houseShader.setVec3("pointLights[0].position", pointLightPositions[0]);
-        houseShader.setVec3("pointLights[0].ambient", pointLight.ambient);
-        houseShader.setVec3("pointLights[0].diffuse", pointLight.diffuse);
-        houseShader.setVec3("pointLights[0].specular", pointLight.specular);
-        houseShader.setFloat("pointLights[0].constant", pointLight.constant);
-        houseShader.setFloat("pointLights[0].linear", pointLight.linear);
-        houseShader.setFloat("pointLights[0].quadratic", pointLight.quadratic);
+        houseShader.setVec3("pointLights[0].ambient", programState->pointLight.ambient);
+        houseShader.setVec3("pointLights[0].diffuse", programState->pointLight.diffuse);
+        houseShader.setVec3("pointLights[0].specular", programState->pointLight.specular);
+        houseShader.setFloat("pointLights[0].constant", programState->pointLight.constant);
+        houseShader.setFloat("pointLights[0].linear", programState->pointLight.linear);
+        houseShader.setFloat("pointLights[0].quadratic", programState->pointLight.quadratic);
         houseShader.setVec3("pointLights[1].position", pointLightPositions[1]);
-        houseShader.setVec3("pointLights[1].ambient", pointLight.ambient);
-        houseShader.setVec3("pointLights[1].diffuse", pointLight.diffuse);
-        houseShader.setVec3("pointLights[1].specular", pointLight.specular);
-        houseShader.setFloat("pointLights[1].constant", pointLight.constant);
-        houseShader.setFloat("pointLights[1].linear", pointLight.linear);
-        houseShader.setFloat("pointLights[1].quadratic", pointLight.quadratic);
+        houseShader.setVec3("pointLights[1].ambient", programState->pointLight.ambient);
+        houseShader.setVec3("pointLights[1].diffuse", programState->pointLight.diffuse);
+        houseShader.setVec3("pointLights[1].specular", programState->pointLight.specular);
+        houseShader.setFloat("pointLights[1].constant", programState->pointLight.constant);
+        houseShader.setFloat("pointLights[1].linear", programState->pointLight.linear);
+        houseShader.setFloat("pointLights[1].quadratic", programState->pointLight.quadratic);
 
-
-
- 
- 
-        houseShader.setVec3("viewPos", camera.Position);
+        houseShader.setVec3("viewPos", programState->camera.Position);
         houseShader.setFloat("material.shininess", 32.0f);
-        // view/projection transformations
-        glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom),
+        glm::mat4 projection = glm::perspective(glm::radians(programState->camera.Zoom),
                                                 (float) SCR_WIDTH / (float) SCR_HEIGHT, 0.1f, 100.0f);
-        glm::mat4 view = camera.GetViewMatrix();
+        glm::mat4 view = programState->camera.GetViewMatrix();
         houseShader.setMat4("projection", projection);
         houseShader.setMat4("view", view);
 
-        // render the loaded model
         glm::mat4 model = glm::mat4(1.0f);
         model = glm::scale(model, glm::vec3(0.1f));    // it's a bit too big for our scene, so scale it down
         houseShader.setMat4("model", model);
         house.Draw(houseShader);
 
+
+
+
+        decorationShader.use();
+        decorationShader.setBool("dan", programState->day);
+        decorationShader.setVec3("dirLight.direction", programState->dirLight.direction);
+        decorationShader.setVec3("dirLight.ambient", programState->dirLight.ambient);
+        decorationShader.setVec3("dirLight.diffuse", programState->dirLight.diffuse);
+        decorationShader.setVec3("dirLight.specular", programState->dirLight.specular);
+        decorationShader.setVec3("pointLights[0].position", pointLightPositions[0]);
+        decorationShader.setVec3("pointLights[0].ambient", programState->pointLight.ambient);
+        decorationShader.setVec3("pointLights[0].diffuse", programState->pointLight.diffuse);
+        decorationShader.setVec3("pointLights[0].specular", programState->pointLight.specular);
+        decorationShader.setFloat("pointLights[0].constant", programState->pointLight.constant);
+        decorationShader.setFloat("pointLights[0].linear", programState->pointLight.linear);
+        decorationShader.setFloat("pointLights[0].quadratic", programState->pointLight.quadratic);
+        decorationShader.setVec3("pointLights[1].position", pointLightPositions[1]);
+        decorationShader.setVec3("pointLights[1].ambient", programState->pointLight.ambient);
+        decorationShader.setVec3("pointLights[1].diffuse", programState->pointLight.diffuse);
+        decorationShader.setVec3("pointLights[1].specular", programState->pointLight.specular);
+        decorationShader.setFloat("pointLights[1].constant", programState->pointLight.constant);
+        decorationShader.setFloat("pointLights[1].linear", programState->pointLight.linear);
+        decorationShader.setFloat("pointLights[1].quadratic", programState->pointLight.quadratic);
+        decorationShader.setVec3("viewPosition", programState->camera.Position);
+        decorationShader.setFloat("material.shininess", 32.0f);
+
         //phormium1
+        projection = glm::perspective(glm::radians(programState->camera.Zoom),
+                                      (float) SCR_WIDTH / (float) SCR_HEIGHT, 0.1f, 100.0f);
+        view = programState->camera.GetViewMatrix();
+        decorationShader.setMat4("projection", projection);
+        decorationShader.setMat4("view", view);
         for(int i = 0; i < phormium1_pos.size(); i++) {
-//            decorationShader.use();
-//            decorationShader.setVec3("lightPos", pointLightPositions[0]);
-//            decorationShader.setVec3("pointLight.ambient", pointLight.ambient);
-//            decorationShader.setVec3("pointLight.diffuse", pointLight.diffuse);
-//            decorationShader.setVec3("pointLight.specular", pointLight.specular);
-//            decorationShader.setFloat("pointLight.constant", pointLight.constant);
-//            decorationShader.setFloat("pointLight.linear", pointLight.linear);
-//            decorationShader.setFloat("pointLight.quadratic", pointLight.quadratic);
-//            decorationShader.setVec3("viewPos", camera.Position);
-//            decorationShader.setFloat("material.shininess", 32.0f);
-
-
-            decorationShader.use();
-            decorationShader.setBool("dan", dan);
-            decorationShader.setVec3("dirLight.direction", DirLight.direction);
-            decorationShader.setVec3("dirLight.ambient", DirLight.ambient);
-            decorationShader.setVec3("dirLight.diffuse", DirLight.diffuse);
-            decorationShader.setVec3("dirLight.specular", DirLight.specular);
-            decorationShader.setVec3("pointLights[0].position", pointLightPositions[0]);
-            decorationShader.setVec3("pointLights[0].ambient", pointLight.ambient);
-            decorationShader.setVec3("pointLights[0].diffuse", pointLight.diffuse);
-            decorationShader.setVec3("pointLights[0].specular", pointLight.specular);
-            decorationShader.setFloat("pointLights[0].constant", pointLight.constant);
-            decorationShader.setFloat("pointLights[0].linear", pointLight.linear);
-            decorationShader.setFloat("pointLights[0].quadratic", pointLight.quadratic);
-            decorationShader.setVec3("pointLights[1].position", pointLightPositions[1]);
-            decorationShader.setVec3("pointLights[1].ambient", pointLight.ambient);
-            decorationShader.setVec3("pointLights[1].diffuse", pointLight.diffuse);
-            decorationShader.setVec3("pointLights[1].specular", pointLight.specular);
-            decorationShader.setFloat("pointLights[1].constant", pointLight.constant);
-            decorationShader.setFloat("pointLights[1].linear", pointLight.linear);
-            decorationShader.setFloat("pointLights[1].quadratic", pointLight.quadratic);
-            decorationShader.setVec3("viewPosition", camera.Position);
-            decorationShader.setFloat("material.shininess", 32.0f);
-
-
-
-            // view/projection transformations
-            projection = glm::perspective(glm::radians(camera.Zoom),
-                                          (float) SCR_WIDTH / (float) SCR_HEIGHT, 0.1f, 100.0f);
-            view = camera.GetViewMatrix();
-            decorationShader.setMat4("projection", projection);
-            decorationShader.setMat4("view", view);
-
-            // render the loaded model
             model = glm::mat4(1.0f);
             model = glm::translate(model, phormium1_pos[i]);
             model = glm::scale(model, glm::vec3(0.01f));    // it's a bit too big for our scene, so scale it down
@@ -448,203 +420,39 @@ int main() {
         }
 
         //phormium2
+        projection = glm::perspective(glm::radians(programState->camera.Zoom),
+                                      (float) SCR_WIDTH / (float) SCR_HEIGHT, 0.1f, 100.0f);
+        view = programState->camera.GetViewMatrix();
+        decorationShader.setMat4("projection", projection);
+        decorationShader.setMat4("view", view);
+
         for(int i = 0; i < phormium2_pos.size(); i++) {
-//            decorationShader.use();
-//            decorationShader.setVec3("lightPos", pointLightPositions[0]);
-//            decorationShader.setVec3("pointLight.ambient", pointLight.ambient);
-//            decorationShader.setVec3("pointLight.diffuse", pointLight.diffuse);
-//            decorationShader.setVec3("pointLight.specular", pointLight.specular);
-//            decorationShader.setFloat("pointLight.constant", pointLight.constant);
-//            decorationShader.setFloat("pointLight.linear", pointLight.linear);
-//            decorationShader.setFloat("pointLight.quadratic", pointLight.quadratic);
-//            decorationShader.setVec3("viewPos", camera.Position);
-//            decorationShader.setFloat("material.shininess", 32.0f);
-
-            decorationShader.use();
-            decorationShader.setBool("dan", dan);
-            decorationShader.setVec3("dirLight.direction", DirLight.direction);
-            decorationShader.setVec3("dirLight.ambient", DirLight.ambient);
-            decorationShader.setVec3("dirLight.diffuse", DirLight.diffuse);
-            decorationShader.setVec3("dirLight.specular", DirLight.specular);
-            decorationShader.setVec3("pointLights[0].position", pointLightPositions[0]);
-            decorationShader.setVec3("pointLights[0].ambient", pointLight.ambient);
-            decorationShader.setVec3("pointLights[0].diffuse", pointLight.diffuse);
-            decorationShader.setVec3("pointLights[0].specular", pointLight.specular);
-            decorationShader.setFloat("pointLights[0].constant", pointLight.constant);
-            decorationShader.setFloat("pointLights[0].linear", pointLight.linear);
-            decorationShader.setFloat("pointLights[0].quadratic", pointLight.quadratic);
-            decorationShader.setVec3("pointLights[1].position", pointLightPositions[1]);
-            decorationShader.setVec3("pointLights[1].ambient", pointLight.ambient);
-            decorationShader.setVec3("pointLights[1].diffuse", pointLight.diffuse);
-            decorationShader.setVec3("pointLights[1].specular", pointLight.specular);
-            decorationShader.setFloat("pointLights[1].constant", pointLight.constant);
-            decorationShader.setFloat("pointLights[1].linear", pointLight.linear);
-            decorationShader.setFloat("pointLights[1].quadratic", pointLight.quadratic);
-            decorationShader.setVec3("viewPosition", camera.Position);
-            decorationShader.setFloat("material.shininess", 32.0f);
-
-
-
-            // view/projection transformations
-            projection = glm::perspective(glm::radians(camera.Zoom),
-                                          (float) SCR_WIDTH / (float) SCR_HEIGHT, 0.1f, 100.0f);
-            view = camera.GetViewMatrix();
-            decorationShader.setMat4("projection", projection);
-            decorationShader.setMat4("view", view);
-
-            // render the loaded model
             model = glm::mat4(1.0f);
             model = glm::translate(model, phormium2_pos[i]);
             model = glm::scale(model, glm::vec3(0.01f));    // it's a bit too big for our scene, so scale it down
             decorationShader.setMat4("model", model);
             phormium2.Draw(decorationShader);
         }
+
         //tree2
-
-//        for(int i = 0; i < tree1_positions.size(); i++) {
-//            treeShader.use();
-//            treeShader.setVec3("pointLight.position", pointLightPositions[0]);
-//            treeShader.setVec3("pointLight.ambient", pointLight.ambient);
-//            treeShader.setVec3("pointLight.diffuse", pointLight.diffuse);
-//            treeShader.setVec3("pointLight.specular", pointLight.specular);
-//            treeShader.setFloat("pointLight.constant", pointLight.constant);
-//            treeShader.setFloat("pointLight.linear", pointLight.linear);
-//            treeShader.setFloat("pointLight.quadratic", pointLight.quadratic);
-//            treeShader.setVec3("viewPosition", camera.Position);
-//            treeShader.setFloat("material.shininess", 32.0f);
-//            // view/projection transformations
-//            projection = glm::perspective(glm::radians(camera.Zoom),
-//                                          (float) SCR_WIDTH / (float) SCR_HEIGHT, 0.1f, 100.0f);
-//            view = camera.GetViewMatrix();
-//            treeShader.setMat4("projection", projection);
-//            treeShader.setMat4("view", view);
-//            model = glm::mat4(1.0f);
-//            model = glm::translate(model, tree1_positions[i]);
-//            model = glm::scale(model, glm::vec3(0.1f));    // it's a bit too big for our scene, so scale it down
-//            treeShader.setMat4("model", model);
-//            tree_1.Draw(treeShader);
-//        }
-
+        projection = glm::perspective(glm::radians(programState->camera.Zoom),
+                                      (float) SCR_WIDTH / (float) SCR_HEIGHT, 0.1f, 100.0f);
+        view = programState->camera.GetViewMatrix();
+        decorationShader.setMat4("projection", projection);
+        decorationShader.setMat4("view", view);
         for(int i = 0; i < tree1_positions.size(); i++) {
-            treeShader.use();
-
-            treeShader.setBool("dan", dan);
-            treeShader.setVec3("dirLight.direction", DirLight.direction);
-            treeShader.setVec3("dirLight.ambient", DirLight.ambient);
-            treeShader.setVec3("dirLight.diffuse", DirLight.diffuse);
-            treeShader.setVec3("dirLight.specular", DirLight.specular);
-            treeShader.setVec3("pointLights[0].position", pointLightPositions[0]);
-            treeShader.setVec3("pointLights[0].ambient", pointLight.ambient);
-            treeShader.setVec3("pointLights[0].diffuse", pointLight.diffuse);
-            treeShader.setVec3("pointLights[0].specular", pointLight.specular);
-            treeShader.setFloat("pointLights[0].constant", pointLight.constant);
-            treeShader.setFloat("pointLights[0].linear", pointLight.linear);
-            treeShader.setFloat("pointLights[0].quadratic", pointLight.quadratic);
-            treeShader.setVec3("pointLights[1].position", pointLightPositions[1]);
-            treeShader.setVec3("pointLights[1].ambient", pointLight.ambient);
-            treeShader.setVec3("pointLights[1].diffuse", pointLight.diffuse);
-            treeShader.setVec3("pointLights[1].specular", pointLight.specular);
-            treeShader.setFloat("pointLights[1].constant", pointLight.constant);
-            treeShader.setFloat("pointLights[1].linear", pointLight.linear);
-            treeShader.setFloat("pointLights[1].quadratic", pointLight.quadratic);
-            treeShader.setVec3("viewPosition", camera.Position);
-            treeShader.setFloat("material.shininess", 32.0f);
-            // view/projection transformations
-            projection = glm::perspective(glm::radians(camera.Zoom),
-                                          (float) SCR_WIDTH / (float) SCR_HEIGHT, 0.1f, 100.0f);
-            view = camera.GetViewMatrix();
-            treeShader.setMat4("projection", projection);
-            treeShader.setMat4("view", view);
             model = glm::mat4(1.0f);
             model = glm::translate(model, tree1_positions[i]);
             model = glm::scale(model, glm::vec3(0.1f));    // it's a bit too big for our scene, so scale it down
-            treeShader.setMat4("model", model);
-            tree_1.Draw(treeShader);
+            decorationShader.setMat4("model", model);
+            tree_1.Draw(decorationShader);
         }
 
 
-
-
-
-        //light pole1
-//        decorationShader.use();
-//        decorationShader.setVec3("lightPos", pointLightPositions[0]);
-//        decorationShader.setVec3("pointLight.ambient", pointLight.ambient);
-//        decorationShader.setVec3("pointLight.diffuse", pointLight.diffuse);
-//        decorationShader.setVec3("pointLight.specular", pointLight.specular);
-//        decorationShader.setFloat("pointLight.constant", pointLight.constant);
-//        decorationShader.setFloat("pointLight.linear", pointLight.linear);
-//        decorationShader.setFloat("pointLight.quadratic", pointLight.quadratic);
-//        decorationShader.setVec3("viewPos", camera.Position);
-//        decorationShader.setFloat("material.shininess", 32.0f);
-//        // view/projection transformations
-//        projection = glm::perspective(glm::radians(camera.Zoom),
-//                                      (float) SCR_WIDTH / (float) SCR_HEIGHT, 0.1f, 100.0f);
-//        view = camera.GetViewMatrix();
-//        decorationShader.setMat4("projection", projection);
-//        decorationShader.setMat4("view", view);
-//        
-//        // render the loaded model
-//        model = glm::mat4(1.0f);
-//        model = glm::translate(model, glm::vec3(0.3, 0.2, 0.5));
-//        model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0.0, 1.0, 0.0));
-//        model = glm::scale(model, glm::vec3(0.02f));    // it's a bit too big for our scene, so scale it down
-//        decorationShader.setMat4("model", model);
-//        lightPole.Draw(decorationShader);
-//
-//        //light pole2
-//        
-//        decorationShader.use();
-//        decorationShader.setVec3("lightPos", pointLightPositions[0]);
-//        decorationShader.setVec3("pointLight.ambient", pointLight.ambient);
-//        decorationShader.setVec3("pointLight.diffuse", pointLight.diffuse);
-//        decorationShader.setVec3("pointLight.specular", pointLight.specular);
-//        decorationShader.setFloat("pointLight.constant", pointLight.constant);
-//        decorationShader.setFloat("pointLight.linear", pointLight.linear);
-//        decorationShader.setFloat("pointLight.quadratic", pointLight.quadratic);
-//        decorationShader.setVec3("viewPos", camera.Position);
-//        decorationShader.setFloat("material.shininess", 32.0f);
-//        // view/projection transformations
-//        projection = glm::perspective(glm::radians(camera.Zoom),
-//                                      (float) SCR_WIDTH / (float) SCR_HEIGHT, 0.1f, 100.0f);
-//        view = camera.GetViewMatrix();
-//        decorationShader.setMat4("projection", projection);
-//        decorationShader.setMat4("view", view);
-//
-//        // render the loaded model
-//        model = glm::mat4(1.0f);
-//        model = glm::translate(model, glm::vec3(-0.3, 0.2, 0.5));
-//        model = glm::rotate(model, glm::radians(-90.0f), glm::vec3(0.0, 1.0, 0.0));
-//        model = glm::scale(model, glm::vec3(0.02f));    // it's a bit too big for our scene, so scale it down
-//        decorationShader.setMat4("model", model);
-//        lightPole.Draw(decorationShader);
-
-        decorationShader.use();
-        decorationShader.setBool("dan", dan);
-        decorationShader.setVec3("dirLight.direction", DirLight.direction);
-        decorationShader.setVec3("dirLight.ambient", DirLight.ambient);
-        decorationShader.setVec3("dirLight.diffuse", DirLight.diffuse);
-        decorationShader.setVec3("dirLight.specular", DirLight.specular);
-        decorationShader.setVec3("pointLights[0].position", pointLightPositions[0]);
-        decorationShader.setVec3("pointLights[0].ambient", pointLight.ambient);
-        decorationShader.setVec3("pointLights[0].diffuse", pointLight.diffuse);
-        decorationShader.setVec3("pointLights[0].specular", pointLight.specular);
-        decorationShader.setFloat("pointLights[0].constant", pointLight.constant);
-        decorationShader.setFloat("pointLights[0].linear", pointLight.linear);
-        decorationShader.setFloat("pointLights[0].quadratic", pointLight.quadratic);
-        decorationShader.setVec3("pointLights[1].position", pointLightPositions[1]);
-        decorationShader.setVec3("pointLights[1].ambient", pointLight.ambient);
-        decorationShader.setVec3("pointLights[1].diffuse", pointLight.diffuse);
-        decorationShader.setVec3("pointLights[1].specular", pointLight.specular);
-        decorationShader.setFloat("pointLights[1].constant", pointLight.constant);
-        decorationShader.setFloat("pointLights[1].linear", pointLight.linear);
-        decorationShader.setFloat("pointLights[1].quadratic", pointLight.quadratic);
-        decorationShader.setVec3("viewPosition", camera.Position);
-        decorationShader.setFloat("material.shininess", 32.0f);
-        // view/projection transformations
-        projection = glm::perspective(glm::radians(camera.Zoom),
+        //Light Pole
+        projection = glm::perspective(glm::radians(programState->camera.Zoom),
                                       (float) SCR_WIDTH / (float) SCR_HEIGHT, 0.1f, 100.0f);
-        view = camera.GetViewMatrix();
+        view = programState->camera.GetViewMatrix();
         decorationShader.setMat4("projection", projection);
         decorationShader.setMat4("view", view);
 
@@ -657,37 +465,12 @@ int main() {
         lightPole.Draw(decorationShader);
 
         //light pole2
-
-        decorationShader.use();
-        decorationShader.setBool("dan", dan);
-        decorationShader.setVec3("dirLight.direction", DirLight.direction);
-        decorationShader.setVec3("dirLight.ambient", DirLight.ambient);
-        decorationShader.setVec3("dirLight.diffuse", DirLight.diffuse);
-        decorationShader.setVec3("dirLight.specular", DirLight.specular);
-        decorationShader.setVec3("pointLights[0].position", pointLightPositions[0]);
-        decorationShader.setVec3("pointLights[0].ambient", pointLight.ambient);
-        decorationShader.setVec3("pointLights[0].diffuse", pointLight.diffuse);
-        decorationShader.setVec3("pointLights[0].specular", pointLight.specular);
-        decorationShader.setFloat("pointLights[0].constant", pointLight.constant);
-        decorationShader.setFloat("pointLights[0].linear", pointLight.linear);
-        decorationShader.setFloat("pointLights[0].quadratic", pointLight.quadratic);
-        decorationShader.setVec3("pointLights[1].position", pointLightPositions[1]);
-        decorationShader.setVec3("pointLights[1].ambient", pointLight.ambient);
-        decorationShader.setVec3("pointLights[1].diffuse", pointLight.diffuse);
-        decorationShader.setVec3("pointLights[1].specular", pointLight.specular);
-        decorationShader.setFloat("pointLights[1].constant", pointLight.constant);
-        decorationShader.setFloat("pointLights[1].linear", pointLight.linear);
-        decorationShader.setFloat("pointLights[1].quadratic", pointLight.quadratic);
-        decorationShader.setVec3("viewPosition", camera.Position);
-        decorationShader.setFloat("material.shininess", 32.0f);
-        // view/projection transformations
-        projection = glm::perspective(glm::radians(camera.Zoom),
+        projection = glm::perspective(glm::radians(programState->camera.Zoom),
                                       (float) SCR_WIDTH / (float) SCR_HEIGHT, 0.1f, 100.0f);
-        view = camera.GetViewMatrix();
+        view = programState->camera.GetViewMatrix();
         decorationShader.setMat4("projection", projection);
         decorationShader.setMat4("view", view);
 
-        // render the loaded model
         model = glm::mat4(1.0f);
         model = glm::translate(model, glm::vec3(-0.3, 0.2, 0.5));
         model = glm::rotate(model, glm::radians(-90.0f), glm::vec3(0.0, 1.0, 0.0));
@@ -701,37 +484,37 @@ int main() {
         //plane
 
         planeShader.use();
-        projection = glm::perspective(glm::radians(camera.Zoom),
+        projection = glm::perspective(glm::radians(programState->camera.Zoom),
                                       (float) SCR_WIDTH / (float) SCR_HEIGHT, 0.1f, 100.0f);
-        view = camera.GetViewMatrix();
+        view = programState->camera.GetViewMatrix();
         model = glm::mat4(1.0f);
         model = glm::rotate(model, glm::radians(-90.0f), glm::vec3(1.0, 0.0, 0.0));
 
         planeShader.setMat4("projection", projection);
         planeShader.setMat4("view", view);
         planeShader.setMat4("model", model);
-        planeShader.setVec3("viewPos", camera.Position);
+        planeShader.setVec3("viewPos", programState->camera.Position);
 
         //
-        planeShader.setBool("dan", dan);
-        planeShader.setVec3("dirLight.direction", DirLight.direction);
-        planeShader.setVec3("dirLight.ambient", DirLight.ambient);
-        planeShader.setVec3("dirLight.diffuse", DirLight.diffuse);
-        planeShader.setVec3("dirLight.specular", DirLight.specular);
+        planeShader.setBool("dan", programState->day);
+        planeShader.setVec3("dirLight.direction", programState->dirLight.direction);
+        planeShader.setVec3("dirLight.ambient", programState->dirLight.ambient);
+        planeShader.setVec3("dirLight.diffuse", programState->dirLight.diffuse);
+        planeShader.setVec3("dirLight.specular", programState->dirLight.specular);
         planeShader.setVec3("pointLights[0].position", pointLightPositions[0]);
-        planeShader.setVec3("pointLights[0].ambient", pointLight.ambient);
-        planeShader.setVec3("pointLights[0].diffuse", pointLight.diffuse);
-        planeShader.setVec3("pointLights[0].specular", pointLight.specular);
-        planeShader.setFloat("pointLights[0].constant", pointLight.constant);
-        planeShader.setFloat("pointLights[0].linear", pointLight.linear);
-        planeShader.setFloat("pointLights[0].quadratic", pointLight.quadratic);
+        planeShader.setVec3("pointLights[0].ambient", programState->pointLight.ambient);
+        planeShader.setVec3("pointLights[0].diffuse", programState->pointLight.diffuse);
+        planeShader.setVec3("pointLights[0].specular", programState->pointLight.specular);
+        planeShader.setFloat("pointLights[0].constant", programState->pointLight.constant);
+        planeShader.setFloat("pointLights[0].linear", programState->pointLight.linear);
+        planeShader.setFloat("pointLights[0].quadratic", programState->pointLight.quadratic);
         planeShader.setVec3("pointLights[1].position", pointLightPositions[1]);
-        planeShader.setVec3("pointLights[1].ambient", pointLight.ambient);
-        planeShader.setVec3("pointLights[1].diffuse", pointLight.diffuse);
-        planeShader.setVec3("pointLights[1].specular", pointLight.specular);
-        planeShader.setFloat("pointLights[1].constant", pointLight.constant);
-        planeShader.setFloat("pointLights[1].linear", pointLight.linear);
-        planeShader.setFloat("pointLights[1].quadratic", pointLight.quadratic);
+        planeShader.setVec3("pointLights[1].ambient", programState->pointLight.ambient);
+        planeShader.setVec3("pointLights[1].diffuse", programState->pointLight.diffuse);
+        planeShader.setVec3("pointLights[1].specular", programState->pointLight.specular);
+        planeShader.setFloat("pointLights[1].constant", programState->pointLight.constant);
+        planeShader.setFloat("pointLights[1].linear", programState->pointLight.linear);
+        planeShader.setFloat("pointLights[1].quadratic", programState->pointLight.quadratic);
 
 
 
@@ -753,44 +536,40 @@ int main() {
 
         //path
         pathShader.use();
-        projection = glm::perspective(glm::radians(camera.Zoom),
+
+
+        pathShader.setBool("dan", programState->day);
+        pathShader.setVec3("dirLight.direction", programState->dirLight.direction);
+        pathShader.setVec3("dirLight.ambient", programState->dirLight.ambient);
+        pathShader.setVec3("dirLight.diffuse", programState->dirLight.diffuse);
+        pathShader.setVec3("dirLight.specular", programState->dirLight.specular);
+        pathShader.setVec3("pointLights[0].position", pointLightPositions[0]);
+        pathShader.setVec3("pointLights[0].ambient", programState->pointLight.ambient);
+        pathShader.setVec3("pointLights[0].diffuse", programState->pointLight.diffuse);
+        pathShader.setVec3("pointLights[0].specular", programState->pointLight.specular);
+        pathShader.setFloat("pointLights[0].constant", programState->pointLight.constant);
+        pathShader.setFloat("pointLights[0].linear", programState->pointLight.linear);
+        pathShader.setFloat("pointLights[0].quadratic", programState->pointLight.quadratic);
+        pathShader.setVec3("pointLights[1].position", pointLightPositions[1]);
+        pathShader.setVec3("pointLights[1].ambient", programState->pointLight.ambient);
+        pathShader.setVec3("pointLights[1].diffuse", programState->pointLight.diffuse);
+        pathShader.setVec3("pointLights[1].specular", programState->pointLight.specular);
+        pathShader.setFloat("pointLights[1].constant", programState->pointLight.constant);
+        pathShader.setFloat("pointLights[1].linear", programState->pointLight.linear);
+        pathShader.setFloat("pointLights[1].quadratic", programState->pointLight.quadratic);
+        pathShader.setFloat("heightScale", heightScale);
+        pathShader.setFloat("shininess", 256.0f);
+
+        projection = glm::perspective(glm::radians(programState->camera.Zoom),
                                       (float) SCR_WIDTH / (float) SCR_HEIGHT, 0.1f, 100.0f);
-        view = camera.GetViewMatrix();
+        view = programState->camera.GetViewMatrix();
         model = glm::mat4(1.0f);
         model = glm::rotate(model, glm::radians(-90.0f), glm::vec3(1.0, 0.0, 0.0));
 
         pathShader.setMat4("projection", projection);
         pathShader.setMat4("view", view);
         pathShader.setMat4("model", model);
-        pathShader.setVec3("viewPos", camera.Position);
-       // pathShader.setVec3("lightPos", pointLightPositions[1]);
-        pathShader.setFloat("heightScale", heightScale);
-        pathShader.setFloat("shininess", 256.0f);
-        
-        //
-        pathShader.setBool("dan", dan);
-        pathShader.setVec3("dirLight.direction", DirLight.direction);
-        pathShader.setVec3("dirLight.ambient", DirLight.ambient);
-        pathShader.setVec3("dirLight.diffuse", DirLight.diffuse);
-        pathShader.setVec3("dirLight.specular", DirLight.specular);
-        pathShader.setVec3("pointLights[0].position", pointLightPositions[0]);
-        pathShader.setVec3("pointLights[0].ambient", pointLight.ambient);
-        pathShader.setVec3("pointLights[0].diffuse", pointLight.diffuse);
-        pathShader.setVec3("pointLights[0].specular", pointLight.specular);
-        pathShader.setFloat("pointLights[0].constant", pointLight.constant);
-        pathShader.setFloat("pointLights[0].linear", pointLight.linear);
-        pathShader.setFloat("pointLights[0].quadratic", pointLight.quadratic);
-        pathShader.setVec3("pointLights[1].position", pointLightPositions[1]);
-        pathShader.setVec3("pointLights[1].ambient", pointLight.ambient);
-        pathShader.setVec3("pointLights[1].diffuse", pointLight.diffuse);
-        pathShader.setVec3("pointLights[1].specular", pointLight.specular);
-        pathShader.setFloat("pointLights[1].constant", pointLight.constant);
-        pathShader.setFloat("pointLights[1].linear", pointLight.linear);
-        pathShader.setFloat("pointLights[1].quadratic", pointLight.quadratic);
-
-
-
-
+        pathShader.setVec3("viewPos", programState->camera.Position);
 
         glActiveTexture(GL_TEXTURE4);
         glBindTexture(GL_TEXTURE_2D, diffuseMap1);
@@ -806,14 +585,14 @@ int main() {
 
         glDepthFunc(GL_LEQUAL);  // change depth function so depth test passes when values are equal to depth buffer's content
         skyboxShader.use();
-        view = glm::mat4(glm::mat3(camera.GetViewMatrix())); // remove translation from the view matrix
+        view = glm::mat4(glm::mat3(programState->camera.GetViewMatrix())); // remove translation from the view matrix
         skyboxShader.setMat4("view", view);
         skyboxShader.setMat4("projection", projection);
         // skybox cube
         glBindVertexArray(skyboxVAO);
         glActiveTexture(GL_TEXTURE0);
 
-        if(dan){
+        if(programState->day){
             glBindTexture(GL_TEXTURE_CUBE_MAP, cubemapTexture);
         }else{
             glBindTexture(GL_TEXTURE_CUBE_MAP, cubemapTexture1);
@@ -823,50 +602,55 @@ int main() {
         glDepthFunc(GL_LESS); // set depth function back to default
 
 
+        if (programState->ImGuiEnabled)
+            DrawImGui();
 
-
-
-        // glfw: swap buffers and poll IO events (keys pressed/released, mouse moved etc.)
-        // -------------------------------------------------------------------------------
         glfwSwapBuffers(window);
         glfwPollEvents();
     }
 
-    // glfw: terminate, clearing all previously allocated GLFW resources.
-    // ------------------------------------------------------------------
+    delete programState;
+    ImGui_ImplOpenGL3_Shutdown();
+    ImGui_ImplGlfw_Shutdown();
+    ImGui::DestroyContext();
+
     glfwTerminate();
     return 0;
 }
 
-// process all input: query GLFW whether relevant keys are pressed/released this frame and react accordingly
-// ---------------------------------------------------------------------------------------------------------
 void processInput(GLFWwindow *window) {
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         glfwSetWindowShouldClose(window, true);
 
-        if (glfwGetKey(window, GLFW_KEY_B) == GLFW_PRESS)
-            dan =  !dan;
-
-    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
-        camera.ProcessKeyboard(FORWARD, deltaTime);
-    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
-        camera.ProcessKeyboard(BACKWARD, deltaTime);
-    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
-        camera.ProcessKeyboard(LEFT, deltaTime);
-    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
-        camera.ProcessKeyboard(RIGHT, deltaTime);
+    if(programState->CameraMouseMovementUpdateEnabled) {
+        if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
+            programState->camera.ProcessKeyboard(FORWARD, deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
+            programState->camera.ProcessKeyboard(BACKWARD, deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
+            programState->camera.ProcessKeyboard(LEFT, deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
+            programState->camera.ProcessKeyboard(RIGHT, deltaTime);
+    }
 }
 
-// glfw: whenever the window size changed (by OS or user resize) this callback function executes
-// ---------------------------------------------------------------------------------------------
+void key_callback(GLFWwindow *window, int key, int scancode, int action, int mods) {
+    if (key == GLFW_KEY_F1 && action == GLFW_PRESS) {
+        programState->ImGuiEnabled = !programState->ImGuiEnabled;
+        if (programState->ImGuiEnabled) {
+            programState->CameraMouseMovementUpdateEnabled = false;
+            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+        } else {
+            programState->CameraMouseMovementUpdateEnabled = true;
+            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+        }
+    }
+}
+
 void framebuffer_size_callback(GLFWwindow *window, int width, int height) {
-    // make sure the viewport matches the new window dimensions; note that width and
-    // height will be significantly larger than specified on retina displays.
     glViewport(0, 0, width, height);
 }
 
-// glfw: whenever the mouse moves, this callback is called
-// -------------------------------------------------------
 void mouse_callback(GLFWwindow *window, double xpos, double ypos) {
     if (firstMouse) {
         lastX = xpos;
@@ -881,13 +665,15 @@ void mouse_callback(GLFWwindow *window, double xpos, double ypos) {
     lastY = ypos;
 
 
-    camera.ProcessMouseMovement(xoffset, yoffset);
+    if (programState->CameraMouseMovementUpdateEnabled)
+        programState->camera.ProcessMouseMovement(xoffset, yoffset);
+
 }
 
-// glfw: whenever the mouse scroll wheel scrolls, this callback is called
-// ----------------------------------------------------------------------
 void scroll_callback(GLFWwindow *window, double xoffset, double yoffset) {
-    camera.ProcessMouseScroll(yoffset);
+    if(programState->CameraMouseMovementUpdateEnabled) {
+        programState->camera.ProcessMouseScroll(yoffset);
+    }
 }
 
 void renderPlane(unsigned int planeVAO, unsigned int planeVBO)
@@ -961,7 +747,6 @@ void renderPlane(unsigned int planeVAO, unsigned int planeVBO)
                 pos3.x, pos3.y, pos3.z, nm.x, nm.y, nm.z, uv3.x, uv3.y, tangent2.x, tangent2.y, tangent2.z, bitangent2.x, bitangent2.y, bitangent2.z,
                 pos4.x, pos4.y, pos4.z, nm.x, nm.y, nm.z, uv4.x, uv4.y, tangent2.x, tangent2.y, tangent2.z, bitangent2.x, bitangent2.y, bitangent2.z
         };
-        // configure plane VAO
         glGenVertexArrays(1, &planeVAO);
         glGenBuffers(1, &planeVBO);
         glBindVertexArray(planeVAO);
@@ -982,9 +767,9 @@ void renderPlane(unsigned int planeVAO, unsigned int planeVBO)
     glDrawArrays(GL_TRIANGLES, 0, 6);
     glBindVertexArray(0);
 }
-void renderPath(unsigned int planeVAO, unsigned int planeVBO)
+void renderPath(unsigned int pathVAO, unsigned int pathVBO)
 {
-    if (planeVAO == 0)
+    if (pathVAO == 0)
     {
 
         glm::vec3 pos1(-0.1f,  0.1f, 0.001f);
@@ -1053,11 +838,10 @@ void renderPath(unsigned int planeVAO, unsigned int planeVBO)
                 pos3.x, pos3.y, pos3.z, nm.x, nm.y, nm.z, uv3.x, uv3.y, tangent2.x, tangent2.y, tangent2.z, bitangent2.x, bitangent2.y, bitangent2.z,
                 pos4.x, pos4.y, pos4.z, nm.x, nm.y, nm.z, uv4.x, uv4.y, tangent2.x, tangent2.y, tangent2.z, bitangent2.x, bitangent2.y, bitangent2.z
         };
-        // configure plane VAO
-        glGenVertexArrays(1, &planeVAO);
-        glGenBuffers(1, &planeVBO);
-        glBindVertexArray(planeVAO);
-        glBindBuffer(GL_ARRAY_BUFFER, planeVBO);
+        glGenVertexArrays(1, &pathVAO);
+        glGenBuffers(1, &pathVBO);
+        glBindVertexArray(pathVAO);
+        glBindBuffer(GL_ARRAY_BUFFER, pathVBO);
         glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), &quadVertices, GL_STATIC_DRAW);
         glEnableVertexAttribArray(0);
         glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 14 * sizeof(float), (void*)0);
@@ -1070,7 +854,7 @@ void renderPath(unsigned int planeVAO, unsigned int planeVBO)
         glEnableVertexAttribArray(4);
         glVertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE, 14 * sizeof(float), (void*)(11 * sizeof(float)));
     }
-    glBindVertexArray(planeVAO);
+    glBindVertexArray(pathVAO);
     glDrawArrays(GL_TRIANGLES, 0, 6);
     glBindVertexArray(0);
 }
@@ -1144,4 +928,50 @@ unsigned int loadCubemap(vector<std::string> faces)
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
 
     return textureID;
+}
+
+void DrawImGui() {
+    ImGui_ImplOpenGL3_NewFrame();
+    ImGui_ImplGlfw_NewFrame();
+    ImGui::NewFrame();
+
+
+    {
+        static float f = 0.0f;
+        ImGui::Begin("Lights window");
+        ImGui::Checkbox("Day", &programState->day);
+        if(programState->day){
+            ImGui::Text("Directional light");
+            ImGui::DragFloat3("Direction", (float *)&programState->dirLight.direction, 0.05, -1.0, 0.0 );
+            ImGui::ColorEdit3("ambient", (float *)&programState->dirLight.ambient);
+            ImGui::ColorEdit3("diffuse", (float *)&programState->dirLight.diffuse);
+            ImGui::ColorEdit3("specular", (float *)&programState->dirLight.specular);
+
+            ImGui::End();
+
+        }else {
+            ImGui::Text("Point lights");
+            ImGui::ColorEdit3("ambient", (float *)&programState->pointLight.ambient);
+            ImGui::ColorEdit3("diffuse", (float *)&programState->pointLight.diffuse);
+            ImGui::ColorEdit3("specular", (float *)&programState->pointLight.specular);
+            ImGui::DragFloat("constant", &programState->pointLight.constant, 0.05, 0.0, 10.0);
+            ImGui::DragFloat("linear", &programState->pointLight.linear, 0.05, 0.0, 1.0);
+            ImGui::DragFloat("quadratic", &programState->pointLight.quadratic, 0.05, 0.0, 1.0);
+
+            ImGui::End();
+        }
+    }
+
+    {
+        ImGui::Begin("Camera info");
+        const Camera& c = programState->camera;
+        ImGui::Text("Camera position: (%f, %f, %f)", c.Position.x, c.Position.y, c.Position.z);
+        ImGui::Text("(Yaw, Pitch): (%f, %f)", c.Yaw, c.Pitch);
+        ImGui::Text("Camera front: (%f, %f, %f)", c.Front.x, c.Front.y, c.Front.z);
+        ImGui::Checkbox("Camera mouse update", &programState->CameraMouseMovementUpdateEnabled);
+        ImGui::End();
+    }
+
+    ImGui::Render();
+    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 }
